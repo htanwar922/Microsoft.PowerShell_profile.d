@@ -13,8 +13,9 @@ function NetCat {
     $port = $p
     Write-Output $ip`:$port
 
-    $jobs = New-Object System.Collections.ArrayList
     $input_ = [ref]''
+    $jobs = New-Object System.Collections.ArrayList
+    $sockets = New-Object System.Collections.ArrayList
 
     function getchar {
         param (
@@ -34,7 +35,6 @@ function NetCat {
     }
 
     function GetInputInParallel {
-        # Write-Host "Enter message: " -NoNewline
         $input_.Value = ''
 
         while ($true) {
@@ -57,147 +57,21 @@ function NetCat {
         }
     }
 
-    function Start-TCPServer {
+    function Start-UDP-RX {
         param(
-            [int]$port
+            [System.Object] $socket,
+            [ref] $remoteEndPoint,
+            [string] $rxJobName
         )
 
-        $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Any, $port)
-        $listener.Start()
-        Write-Host "Listening on port $port..."
-
-        while ($global:keepRunning) {
-            if ($listener.Pending()) {
-                $client = $listener.AcceptTcpClient()
-                $stream = $client.GetStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $writer = New-Object System.IO.StreamWriter($stream)
-
-                while ($global:keepRunning -and $null -ne ($line = [Console]::In.ReadLine())) {
-                    $writer.WriteLine($line)
-                    $writer.Flush()
-                }
-
-                $client.Close()
-            } else {
-                Start-Sleep -Milliseconds 100
-            }
-        }
-
-        $listener.Stop()
-        Write-Host "Server stopped."
-    }
-
-    function Start-TCPClient {
-        param(
-            [string]$ip,
-            [int]$port
-        )
-
-        # Define the named pipe name
-        $pipeName = "\\.\pipe\MyNamedPipe"
-
-        # Create a named pipe
-        $pipeServer = New-Object System.IO.Pipes.NamedPipeServerStream($pipeName, [System.IO.Pipes.PipeDirection]::InOut)
-
-        # Create a TCP client
-        $client = New-Object System.Net.Sockets.TcpClient($ip, $port)
-        $stream = $client.GetStream()
-        $reader = New-Object System.IO.StreamReader($stream)
-        $writer = New-Object System.IO.StreamWriter($stream)
-
-        # Start the named pipe server and connect it
-        $pipeServer.WaitForConnection()
-        $pipeReader = New-Object System.IO.StreamReader($pipeServer)
-        $pipeWriter = New-Object System.IO.StreamWriter($pipeServer)
-
-        # Job to read from stdin and send to the server
-        $txJob = Start-Job -ScriptBlock {
-            param($pipeWriter, $pipeReader)
-            while ($keepRunning) {
-                if ($pipeReader.Peek() -ne -1) {
-                    $input_ = $pipeReader.ReadLine()
-                    if ($null -ne $input_) {
-                        # Send data to the server
-                        $pipeWriter.WriteLine($input_)
-                        $pipeWriter.Flush()
-                    }
-                }
-                Start-Sleep -Milliseconds 100
-            }
-        } -ArgumentList $pipeWriter, $pipeReader
-
-        # Job to read from the server and write to stdout
-        $rxJob = Start-Job -ScriptBlock {
-            param($reader)
-            while ($keepRunning) {
-                if ($reader.Peek() -ne -1) {
-                    $line = $reader.ReadLine()
-                    if ($null -ne $line) {
-                        Write-Output "Received from server: $line"
-                    }
-                }
-                Start-Sleep -Milliseconds 100
-            }
-        } -ArgumentList $reader
-
-        # Main loop to handle user input and manage job states
-        while ($true) {
-            $input_ = Read-Host "Press 'q' to quit"
-            if ($input_ -eq 'q') {
-                $keepRunning = $false
-                break
-            }
-
-            # Write to the named pipe
-            $pipeWriter.WriteLine($input_)
-            $pipeWriter.Flush()
-
-            # Check for job errors
-            if ($txJob.State -eq 'Failed' -or $rxJob.State -eq 'Failed') {
-                Write-Error "One or more jobs failed"
-                break
-            }
-
-            # Check for job completion
-            if ($txJob.State -eq 'Completed' -and $rxJob.State -eq 'Completed') {
-                break
-            }
-
-            # Wait for a bit before checking again
-            Start-Sleep -Milliseconds 100
-
-            # Check for job output
-            $txJob | Receive-Job
-            $rxJob | Receive-Job
-        }
-
-        # Clean up
-        Remove-Job -Job $txJob -Force
-        Remove-Job -Job $rxJob -Force
-        $client.Close()
-        $pipeServer.Close()
-    }
-
-    function Start-UDPServer {
-        param(
-            [int]$port
-        )
-
-        $rxJobName = 'UDP-RX:' + $port
         Get-Job -Name $rxJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
 
-        $server = New-Object System.Net.Sockets.UdpClient $port
-        Write-Output "UDP server listening at $port"
-
-        $client = [ref] $null
+        $remoteEndPoint.Value = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
         $rxJob = Start-ThreadJob -Name $rxJobName -ScriptBlock {
-            param($server, [ref]$client)
+            param($socket, [ref] $remoteEndPoint)
             while ($true) {
                 try {
-                    $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
-                    $data = $server.Receive([ref]$remoteEndPoint)
-                    $client.Value = $remoteEndPoint
+                    $data = $socket.Receive($remoteEndPoint)
                     $message = [System.Text.Encoding]::ASCII.GetString($data)
                     $message
                 } catch {
@@ -205,9 +79,16 @@ function NetCat {
                     Start-Sleep -Milliseconds 1000
                 }
             }
-        } -ArgumentList $server, $client
+        } -ArgumentList $socket, $remoteEndPoint
 
-        $jobs.Add($rxJob)
+        $jobs.Add($rxJob) | Out-Null
+    }
+
+    function Start-UDP-TX {
+        param(
+            [System.Object] $socket,
+            [ref] $remoteEndPoint = $null
+        )
 
         while ($true) {
             GetInputInParallel
@@ -221,12 +102,34 @@ function NetCat {
             }
 
             $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
-            if ( $server.Send($data, $data.Length, $client.Value) -ne $data.Length ) {
-                Write-Error "Failed to send data"
+            if ($remoteEndPoint.Value -eq $null) {
+                $length = $socket.Send($data, $data.Length)
+            } else {
+                $length = $socket.Send($data, $data.Length, $remoteEndPoint.Value)
+            }
+            if ($length -ne $data.Length ) {
+                "Failed to send data"
+                "Invalid parameters. Data: " + $input_.Value + ", RemoteEndPoint: " + $remoteEndPoint.Value.ToString()
             }
         }
 
-        $server.Close()
+        $socket.Close()
+    }
+
+    function Start-UDPServer {
+        param(
+            [int]$port
+        )
+
+        $server = New-Object System.Net.Sockets.UdpClient $port
+        $sockets.Add($server) | Out-Null
+        Write-Output "UDP server listening at $port"
+
+        [ref] $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
+        $rxJobName = 'UDP-RX:' + $port
+
+        Start-UDP-RX -socket $server -remoteEndPoint $remoteEndPoint -rxJobName $rxJobName
+        Start-UDP-TX -socket $server -remoteEndPoint $remoteEndPoint
     }
 
     function Start-UDPClient {
@@ -235,7 +138,17 @@ function NetCat {
             [int]$port
         )
 
+        $client = New-Object System.Net.Sockets.UdpClient
+        $sockets.Add($client) | Out-Null
+        Write-Output "Connecting UDP to $ip`:$port"
+
+        $client.Connect($ip, $port)
+        [ref] $remoteEndPoint = $null
         $rxJobName = 'UDP-RX:' + $ip + ':' + $port
+
+        Start-UDP-RX -socket $client -remoteEndPoint $remoteEndPoint -rxJobName $rxJobName
+        Start-UDP-TX -socket $client -remoteEndPoint ([ref] $null)
+    }
         Get-Job -Name $rxJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
 
         $client = New-Object System.Net.Sockets.UdpClient
@@ -296,8 +209,13 @@ function NetCat {
                 Start-NetCatTCPClient -ip $ip -port $port
             }
         }
+    } catch {
+        Write-Error $_.Exception.Message
+        $sockets | ForEach-Object {
+            $_.Dispose()
+        }
     } finally {
-        $jobs | Remove-Job -Force
+        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
     }
 }
 
