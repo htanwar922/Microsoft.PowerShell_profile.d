@@ -29,7 +29,6 @@ function NetCat {
                 $c = [Console]::ReadKey($true).KeyChar
                 break
             }
-            # Start-Sleep -Milliseconds 10
         }
         return $c
     }
@@ -185,35 +184,13 @@ function NetCat {
             [int]$port
         )
 
-        $txJobName = 'UDP-TX:' + $port #+ ':' + $PID
-        Get-Job -Name $txJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
-
-        $rxJobName = 'UDP-RX:' + $port #+ ':' + $PID
+        $rxJobName = 'UDP-RX:' + $port
         Get-Job -Name $rxJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
 
         $server = New-Object System.Net.Sockets.UdpClient $port
         Write-Output "UDP server listening at $port"
 
-        $txQueue = New-Object System.Collections.Queue
         $client = [ref] $null
-
-        $txJob = Start-ThreadJob -Name $txJobName -ScriptBlock {
-            param($server, $txQueue, [ref]$client)
-            while ($true) {
-                try {
-                    if ($client.Value -and $txQueue.Count -gt 0) {
-                        $data = $txQueue.Dequeue()
-                        if ( $server.Send($data, $data.Length, $client.Value) -ne $data.Length ) {
-                            Write-Error "Failed to send data"
-                        }
-                    }
-                } catch {
-                    Write-Error $_.Exception.Message
-                    Start-Sleep -Milliseconds 1000
-                }
-            }
-        } -ArgumentList $server, $txQueue, $client
-
         $rxJob = Start-ThreadJob -Name $rxJobName -ScriptBlock {
             param($server, [ref]$client)
             while ($true) {
@@ -221,9 +198,6 @@ function NetCat {
                     $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
                     $data = $server.Receive([ref]$remoteEndPoint)
                     $client.Value = $remoteEndPoint
-                    # $message = $remoteEndPoint.Address.ToString() + ':' + `
-                    #             $remoteEndPoint.Port + ' - ' + `
-                    #             [System.Text.Encoding]::ASCII.GetString($data)
                     $message = [System.Text.Encoding]::ASCII.GetString($data)
                     $message
                 } catch {
@@ -233,12 +207,10 @@ function NetCat {
             }
         } -ArgumentList $server, $client
 
-        $jobs.Add($txJob)
         $jobs.Add($rxJob)
 
         while ($true) {
             GetInputInParallel
-            # $input_.Value
 
             if ($input_.Value -eq "exit") {
                 break
@@ -249,7 +221,9 @@ function NetCat {
             }
 
             $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
-            $txQueue.Enqueue($data)
+            if ( $server.Send($data, $data.Length, $client.Value) -ne $data.Length ) {
+                Write-Error "Failed to send data"
+            }
         }
 
         $server.Close()
@@ -261,12 +235,12 @@ function NetCat {
             [int]$port
         )
 
-        $rxJobName = 'UDP-RX:' + $ip + ':' + $port #+ ':' + $PID
+        $rxJobName = 'UDP-RX:' + $ip + ':' + $port
         Get-Job -Name $rxJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
 
         $client = New-Object System.Net.Sockets.UdpClient
         $client.Connect($ip, $port)
-        Write-Output "Starting UDP client... at $ip`:$port"
+        Write-Output "Connecting UDP to $ip`:$port"
 
         $rxJob = Start-ThreadJob -Name $rxJobName -ScriptBlock {
             param($client, $rxQueue)
@@ -275,9 +249,6 @@ function NetCat {
                 try {
                     $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
                     $data = $client.Receive([ref]$remoteEndPoint)
-                    # $message = $remoteEndPoint.Address.ToString() + ':' + `
-                    #             $remoteEndPoint.Port + ' - ' + `
-                    #             [System.Text.Encoding]::ASCII.GetString($data)
                     $message = [System.Text.Encoding]::ASCII.GetString($data)
                     $message
                 } catch {
@@ -291,18 +262,17 @@ function NetCat {
 
         while ($true) {
             GetInputInParallel
-            # $input_.Value
-
-            $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
-            if ( $client.Send($data, $data.Length) -ne $data.Length ) {
-                Write-Error "Failed to send data"
-            }
 
             if ($input_.Value -eq "exit") {
                 break
             }
             if ($input_.Value -eq "") {
                 continue
+            }
+
+            $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
+            if ( $client.Send($data, $data.Length) -ne $data.Length ) {
+                Write-Error "Failed to send data"
             }
         }
 
@@ -311,20 +281,18 @@ function NetCat {
 
     try {
         if ($l) {
+            if ($port -eq 0) {
+                throw 'Port number is required for TCP/UDP server'
+            }
             if ($u) {
-                if ($port -eq 0) {
-                    throw "Port number is required for UDP server"
-                }
                 Start-UDPServer -port $port
             } else {
-                Write-Output "Starting server... at $ip`:$port"
                 Start-NetCatTCPServer -port $port
             }
         } else {
             if ($u) {
                 Start-UDPClient -ip $ip -port $port
             } else {
-                Write-Output "Starting client... at $ip`:$port"
                 Start-NetCatTCPClient -ip $ip -port $port
             }
         }
