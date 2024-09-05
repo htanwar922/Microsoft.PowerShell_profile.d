@@ -67,12 +67,21 @@ function docker-start-linux-arm {
                 --name $CONTAINER --user=$USER $IMAGE zsh -ilsc \'cd; zsh -ils\'
         }
     } else {
-        docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
-            --security-opt seccomp=unconfined --security-opt apparmor=unconfined $args `
+        if ( "$args" -eq "" ) {
+            docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
             --network $NETWORK -p 58010:58010 -p 9010:9010 `
             -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
             -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
             --name $CONTAINER --user=$USER $IMAGE zsh -ilsc 'cd; zsh -ils'
+        } else {
+            docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
+                --security-opt seccomp=unconfined --security-opt apparmor=unconfined "$args" `
+                --network $NETWORK -p 58010:58010 -p 9010:9010 `
+                -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
+                -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
+                --name $CONTAINER --user=$USER $IMAGE zsh -ilsc 'cd; zsh -ils'
+        }
     }
 }
 function docker-run-linux-arm {
