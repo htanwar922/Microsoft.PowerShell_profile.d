@@ -39,10 +39,21 @@ function NetCat {
 
         while ($true) {
             $jobs | ForEach-Object {
+                if ($_.State -eq 'Completed') {
+                    'Job completed'
+                    $input_.Value = 'exit'
+                    $jobs.Remove($_)
+                    break
+                }
                 Receive-Job -Job $_
             }
             $c = getchar
             if ($null -eq $c) {
+                continue
+            }
+            if ($c -eq "`b") {
+                $input_.Value = $input_.Value.Substring(0, $input_.Value.Length - 1)
+                Write-Host "`b `b" -NoNewline
                 continue
             }
             $input_.Value += $c
@@ -102,7 +113,7 @@ function NetCat {
             }
 
             $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
-            if ($remoteEndPoint.Value -eq $null) {
+            if ($null -eq $remoteEndPoint.Value) {
                 $length = $socket.Send($data, $data.Length)
             } else {
                 $length = $socket.Send($data, $data.Length, $remoteEndPoint.Value)
