@@ -160,47 +160,119 @@ function NetCat {
         Start-UDP-RX -socket $client -remoteEndPoint $remoteEndPoint -rxJobName $rxJobName
         Start-UDP-TX -socket $client -remoteEndPoint ([ref] $null)
     }
+
+    function Start-TCP-RX {
+        param(
+            [System.Object] $socket,
+            [System.IO.StreamReader] $reader,
+            [string] $rxJobName
+        )
+
         Get-Job -Name $rxJobName -ErrorAction SilentlyContinue | Remove-Job -Force | Out-Null
 
-        $client = New-Object System.Net.Sockets.UdpClient
-        $client.Connect($ip, $port)
-        Write-Output "Connecting UDP to $ip`:$port"
-
         $rxJob = Start-ThreadJob -Name $rxJobName -ScriptBlock {
-            param($client, $rxQueue)
-            # $client.Client.ReceiveTimeout = 1000
+            param($reader)
             while ($true) {
                 try {
-                    $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
-                    $data = $client.Receive([ref]$remoteEndPoint)
-                    $message = [System.Text.Encoding]::ASCII.GetString($data)
+                    $message = $reader.ReadLine()
                     $message
                 } catch {
-                    Write-Error $_.Exception.Message
-                    Start-Sleep -Milliseconds 1000
+                    'Client disconnected'
+                    break
                 }
             }
-        } -ArgumentList $client, $rxQueue
+        } -ArgumentList $reader
 
-        $jobs.Add($rxJob)
+        $jobs.Add($rxJob) | Out-Null
+    }
 
-        while ($true) {
+    function Start-TCP-TX {
+        param(
+            [System.Object] $socket,
+            [System.IO.StreamWriter] $writer
+        )
+
+        while ($socket.Connected) {
             GetInputInParallel
 
             if ($input_.Value -eq "exit") {
                 break
             }
+
             if ($input_.Value -eq "") {
                 continue
             }
 
-            $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
-            if ( $client.Send($data, $data.Length) -ne $data.Length ) {
-                Write-Error "Failed to send data"
+            try {
+                $writer.WriteLine($input_.Value)
+                $writer.Flush()
+            } catch {
+                'Client disconnected'
+                break
+            }
+        }
+    }
+
+    function Start-TCPServer {
+        param(
+            [int]$port
+        )
+
+        $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Any, $port)
+        $sockets.Add($listener) | Out-Null
+        $listener.Start()
+        Write-Output "TCP server listening at $port"
+
+        while ($true) {
+            $client = $listener.AcceptTcpClient()
+            $sockets.Add($client) | Out-Null
+            Write-Output "Client connected"
+
+            $stream = $client.GetStream()
+            $reader = New-Object System.IO.StreamReader $stream
+            $writer = New-Object System.IO.StreamWriter $stream
+
+            $rxJobName = 'TCP-RX:' + $port
+            Start-TCP-RX -socket $client -reader $reader -rxJobName $rxJobName
+            Start-TCP-TX -socket $client -writer $writer
+
+            $reader.Close()
+            $writer.Close()
+            $client.Close()
+            $sockets.Remove($client)
+
+            if ($input_.Value -eq "exit") {
+                break
             }
         }
 
+        $listener.Stop()
+        $sockets.Remove($listener)
+    }
+
+    function Start-TCPClient {
+        param(
+            [string]$ip,
+            [int]$port
+        )
+
+        $client = New-Object System.Net.Sockets.TcpClient
+        $sockets.Add($client) | Out-Null
+        Write-Output "Connecting TCP to $ip`:$port"
+
+        $client.Connect($ip, $port)
+        $stream = $client.GetStream()
+        $reader = New-Object System.IO.StreamReader $stream
+        $writer = New-Object System.IO.StreamWriter $stream
+
+        $rxJobName = 'TCP-RX:' + $ip + ':' + $port
+        Start-TCP-RX -socket $client -reader $reader -rxJobName $rxJobName
+        Start-TCP-TX -socket $client -writer $writer
+
+        $reader.Close()
+        $writer.Close()
         $client.Close()
+        $sockets.Remove($client)
     }
 
     try {
@@ -211,13 +283,13 @@ function NetCat {
             if ($u) {
                 Start-UDPServer -port $port
             } else {
-                Start-NetCatTCPServer -port $port
+                Start-TCPServer -port $port
             }
         } else {
             if ($u) {
                 Start-UDPClient -ip $ip -port $port
             } else {
-                Start-NetCatTCPClient -ip $ip -port $port
+                Start-TCPClient -ip $ip -port $port
             }
         }
     } catch {
