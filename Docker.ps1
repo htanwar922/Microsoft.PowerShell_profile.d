@@ -1,4 +1,3 @@
-
 # Docker settings for linux-arm for DCU
 
 $IMAGE = "linux-arm"
@@ -10,7 +9,7 @@ $BASE_IMAGE = "osrf/ubuntu_armhf:focal"
 $DOCKER_IS_WSL_COMMAND = $false
 
 function docker-setup-linux-arm {
-    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e Write-Output "Using WSL..." }
+    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e echo "Using WSL..." }
     else { Write-Output "Not using WSL..." }
 
     # basic setup
@@ -32,16 +31,16 @@ function docker-setup-linux-arm {
     docker exec --user=$USER -it $CONTAINER ln -s /home/$USER/.zsh/zprofile /home/$USER/.zprofile
     docker exec --user=root -it $CONTAINER chsh -s /bin/zsh $USER
     if ($DOCKER_IS_WSL_COMMAND) {
-        docker exec --user=root -it $CONTAINER zsh -c "Write-Output $USER ALL=\(ALL\) NOPASSWD:ALL | tee -a /etc/sudoers"
+        docker exec --user=root -it $CONTAINER zsh -c "echo $USER ALL=\(ALL\) NOPASSWD:ALL | tee -a /etc/sudoers"
     } else {
-        docker exec --user=root -it $CONTAINER zsh -c "Write-Output '$USER' ALL='(ALL)' NOPASSWD:ALL | tee -a /etc/sudoers"
+        docker exec --user=root -it $CONTAINER zsh -c "echo '$USER' ALL='(ALL)' NOPASSWD:ALL | tee -a /etc/sudoers"
     }
     docker commit $CONTAINER $IMAGE
     docker stop $CONTAINER
     Write-Output "Setup complete"
 }
 function docker-start-linux-arm {
-    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e Write-Output "Using WSL..." }
+    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e echo "Using WSL..." }
     else { Write-Output "Not using WSL..." }
 
     docker network create $NETWORK
