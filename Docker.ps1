@@ -115,7 +115,8 @@ function docker {
         wsl -d Ubuntu -e docker $args
         return
     }
-    if ( docker.exe info 2>&1 | Select-String 'ERROR: error during connect' ) {
+    if ( $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue).CommandType -or `
+            (docker.exe info 2>&1 | Select-String 'ERROR: error during connect') ) {
         # Write-Output "Choosing WSL..."
         $global:DOCKER_IS_WSL_COMMAND = $true
         wsl -d Ubuntu -e docker $args
