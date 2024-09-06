@@ -1,12 +1,12 @@
-
 # Netcat using powershell
 
 function NetCat {
     param(
         [string]$h = "",
         [int]$p,
-        [Switch]$l = $false,  # "server" or "client"
-        [Switch]$u = $false
+        [Switch]$l = $false,
+        [Switch]$u = $false,
+        [Switch]$b = $false
     )
 
     $ip = $h
@@ -146,12 +146,17 @@ function NetCat {
     function Start-UDPClient {
         param(
             [string]$ip,
-            [int]$port
+            [int]$port,
+            [bool]$broadcast = $false
         )
 
         $client = New-Object System.Net.Sockets.UdpClient
         $sockets.Add($client) | Out-Null
         Write-Output "Connecting UDP to $ip`:$port"
+
+        if ($broadcast) {
+            $client.EnableBroadcast = $true
+        }
 
         $client.Connect($ip, $port)
         [ref] $remoteEndPoint = $null
@@ -287,7 +292,7 @@ function NetCat {
             }
         } else {
             if ($u) {
-                Start-UDPClient -ip $ip -port $port
+                Start-UDPClient -ip $ip -port $port -broadcast:$b
             } else {
                 Start-TCPClient -ip $ip -port $port
             }
