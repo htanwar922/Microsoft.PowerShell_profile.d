@@ -2,16 +2,18 @@
 
 function NetCat {
     param(
-        [string]$h = "",
+        [string]$h = $null,
         [int]$p,
         [Switch]$l = $false,
         [Switch]$u = $false,
-        [Switch]$b = $false
+        [Switch]$b = $false,
+        [string]$s = $null,
+        [Switch]$raw = $false,
+        [string]$sep = $null
     )
 
     $ip = $h
     $port = $p
-    Write-Output $ip`:$port
 
     $input_ = [ref]''
     $jobs = New-Object System.Collections.ArrayList
@@ -79,18 +81,23 @@ function NetCat {
 
         $remoteEndPoint.Value = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
         $rxJob = Start-ThreadJob -Name $rxJobName -ScriptBlock {
-            param($socket, [ref] $remoteEndPoint)
+            param($socket, [ref] $remoteEndPoint, $raw, $sep)
             while ($true) {
                 try {
                     $data = $socket.Receive($remoteEndPoint)
-                    $message = [System.Text.Encoding]::ASCII.GetString($data)
-                    $message
+                    if ( $raw ) {
+                        $bytes = ''
+                        $data | ForEach-Object { $bytes += "{0:x2}$sep" -f $_ }
+                        $bytes
+                    } else {
+                        [System.Text.Encoding]::ASCII.GetString($data)
+                    }
                 } catch {
                     Write-Error $_.Exception.Message
                     Start-Sleep -Milliseconds 1000
                 }
             }
-        } -ArgumentList $socket, $remoteEndPoint
+        } -ArgumentList $socket, $remoteEndPoint, $raw, $sep
 
         $jobs.Add($rxJob) | Out-Null
     }
@@ -129,12 +136,18 @@ function NetCat {
 
     function Start-UDPServer {
         param(
-            [int]$port
+            [int]$port,
+            [string]$server_ip = $null
         )
 
-        $server = New-Object System.Net.Sockets.UdpClient $port
+        if ($server_ip -eq $null -or $server_ip -eq '') {
+            $server = New-Object System.Net.Sockets.UdpClient $port
+        } else {
+            $server = New-Object System.Net.Sockets.UDPClient
+            $server.Client.Bind(([System.Net.IPEndPoint]::new([System.Net.IPAddress]::Parse($server_ip), $port)))
+        }
         $sockets.Add($server) | Out-Null
-        Write-Output "UDP server listening at $port"
+        Write-Output "UDP server listening at $server_ip`:$port"
 
         [ref] $remoteEndPoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any, 0)
         $rxJobName = 'UDP-RX:' + $port
@@ -220,13 +233,14 @@ function NetCat {
 
     function Start-TCPServer {
         param(
-            [int]$port
+            [int]$port,
+            [string]$server_ip = $null
         )
 
         $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Any, $port)
         $sockets.Add($listener) | Out-Null
         $listener.Start()
-        Write-Output "TCP server listening at $port"
+        Write-Output "TCP server listening at $server_ip`:$port"
 
         while ($true) {
             $client = $listener.AcceptTcpClient()
@@ -286,9 +300,9 @@ function NetCat {
                 throw 'Port number is required for TCP/UDP server'
             }
             if ($u) {
-                Start-UDPServer -port $port
+                Start-UDPServer -port $port -server_ip $s
             } else {
-                Start-TCPServer -port $port
+                Start-TCPServer -port $port -server_ip $s
             }
         } else {
             if ($u) {
