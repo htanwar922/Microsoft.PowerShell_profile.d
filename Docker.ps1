@@ -9,9 +9,6 @@ $BASE_IMAGE = "osrf/ubuntu_armhf:focal"
 $DOCKER_IS_WSL_COMMAND = $false
 
 function docker-setup-linux-arm {
-    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e echo "Using WSL..." }
-    else { Write-Output "Not using WSL..." }
-
     # basic setup
     if ( docker ps -a | Select-String $CONTAINER ) { docker stop $CONTAINER }
     docker pull $BASE_IMAGE
@@ -40,9 +37,6 @@ function docker-setup-linux-arm {
     Write-Output "Setup complete"
 }
 function docker-start-linux-arm {
-    if ($DOCKER_IS_WSL_COMMAND) { wsl -d Ubuntu -e echo "Using WSL..." }
-    else { Write-Output "Not using WSL..." }
-
     docker network create $NETWORK
     if ( docker ps -a | Select-String $CONTAINER ) {
         docker stop $CONTAINER
@@ -110,17 +104,17 @@ function docker-stop-linux-arm {
 
 function docker {
     if ( $DOCKER_IS_WSL_COMMAND ) {
-        # Write-Output "Using WSL..."
+        Write-Output "Using WSL..."
         wsl -d Ubuntu -e docker $args
         return
     }
-    if ( $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue).CommandType -or `
+    if ( $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue) -or `
             (docker.exe info 2>&1 | Select-String 'ERROR: error during connect') ) {
-        # Write-Output "Choosing WSL..."
+        Write-Output "Choosing WSL..."
         $global:DOCKER_IS_WSL_COMMAND = $true
         wsl -d Ubuntu -e docker $args
     } else {
-        # Write-Output "Not using WSL..."
+        Write-Output "Not using WSL..."
         docker.exe $args
     }
 }
