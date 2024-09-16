@@ -7,6 +7,7 @@ $USER = "himanshu"
 $WSL_USER = "himanshu"
 $BASE_IMAGE = "osrf/ubuntu_armhf:focal"
 $DOCKER_IS_WSL_COMMAND = $false
+$DOCKER_USE_EXE = $false
 
 function docker-setup-linux-arm {
     # basic setup
@@ -34,7 +35,7 @@ function docker-setup-linux-arm {
     }
     docker commit $CONTAINER $IMAGE
     docker stop $CONTAINER
-    Write-Output "Setup complete"
+    Write-Debug "Setup complete"
 }
 function docker-start-linux-arm {
     docker network create $NETWORK
@@ -43,34 +44,38 @@ function docker-start-linux-arm {
     }
 
     if ($DOCKER_IS_WSL_COMMAND) {
+        if ($DOCKER_USE_EXE) {
+            $cmd = "`'`"cd; zsh -ils`"`'"
+        } else {
+            $cmd = 'cd; zsh -ils'
+        }
         if ( "$args" -eq "" ) {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
                 --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
-                --network $NETWORK -p 58010:58010 -p 9010:9010 `
+                --network $NETWORK -p 58020:58020 -p 58021:58021 -p 9020:9020/udp `
                 -v /home/$WSL_USER/.ssh:/home/$USER/.ssh `
                 -v /home/$WSL_USER/concentrator/:/home/$USER/concentrator `
-                --name $CONTAINER --user=$USER $IMAGE zsh -ilsc \'cd; zsh -ils\'
+                --name $CONTAINER --user=$USER $IMAGE zsh -ilsc $cmd
         } else {
-            Write-Output "$args"
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
-                --security-opt seccomp=unconfined --security-opt apparmor=unconfined "$args" `
-                --network $NETWORK -p 58010:58010 -p 9010:9010 `
+                --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
+                --network $NETWORK "$args" `
                 -v /home/$WSL_USER/.ssh:/home/$USER/.ssh `
                 -v /home/$WSL_USER/concentrator/:/home/$USER/concentrator `
-                --name $CONTAINER --user=$USER $IMAGE zsh -ilsc \'cd; zsh -ils\'
+                --name $CONTAINER --user=$USER $IMAGE zsh -ilsc $cmd
         }
     } else {
         if ( "$args" -eq "" ) {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
             --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
-            --network $NETWORK -p 58010:58010 -p 9010:9010 `
+            --network $NETWORK -p 58020:58020 -p 58021:58021 -p 9020:9020/udp `
             -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
             -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
             --name $CONTAINER --user=$USER $IMAGE zsh -ilsc 'cd; zsh -ils'
         } else {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
-                --security-opt seccomp=unconfined --security-opt apparmor=unconfined "$args" `
-                --network $NETWORK -p 58010:58010 -p 9010:9010 `
+                --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
+                --network $NETWORK "$args" `
                 -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
                 -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
                 --name $CONTAINER --user=$USER $IMAGE zsh -ilsc 'cd; zsh -ils'
@@ -78,8 +83,10 @@ function docker-start-linux-arm {
     }
 }
 function docker-run-linux-arm {
-    if ($DOCKER_IS_WSL_COMMAND) {
-        docker exec --user=$USER -it $CONTAINER zsh -ilsc \'cd; zsh -ils\'
+    docker version > $null
+    if ($DOCKER_USE_EXE) {
+        docker exec --user=$USER -it $CONTAINER zsh -ilsc `'"cd; zsh -ils"`'
+        Write-Debug 'Using WSL from docker.exe...'
     } else {
         docker exec --user=$USER -it $CONTAINER zsh -ilsc 'cd; zsh -ils'
     }
@@ -104,17 +111,28 @@ function docker-stop-linux-arm {
 
 function docker {
     if ( $DOCKER_IS_WSL_COMMAND ) {
-        Write-Output "Using WSL..."
-        wsl -d Ubuntu -e docker $args
+        if ( $DOCKER_USE_EXE ) {
+            Write-Debug "Using WSL from docker.exe..."
+            docker.exe $args
+        } else {
+            Write-Debug "Using WSL..."
+            wsl -d Ubuntu -e docker $args
+        }
         return
     }
     if ( $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue) -or `
             (docker.exe info 2>&1 | Select-String 'ERROR: error during connect') ) {
-        Write-Output "Choosing WSL..."
+        Write-Debug "Choosing WSL..."
         $global:DOCKER_IS_WSL_COMMAND = $true
         wsl -d Ubuntu -e docker $args
+    } elseif ( (docker.exe info 2>&1 | Select-String 'Operating System' | `
+                ConvertFrom-StringData -Delimiter :).Values.Contains('Ubuntu') ) {
+        Write-Debug "Using WSL from docker.exe..."
+        $global:DOCKER_IS_WSL_COMMAND = $true
+        $global:DOCKER_USE_EXE = $true
+        docker.exe $args
     } else {
-        Write-Output "Not using WSL..."
+        Write-Debug "Not using WSL..."
         docker.exe $args
     }
 }
