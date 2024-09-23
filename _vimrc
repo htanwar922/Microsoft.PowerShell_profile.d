@@ -8,12 +8,13 @@
 
 set nowritebackup  " Disable backup before writing
 set noswapfile     " Disable swap files
+set number		   " Show line numbers
 syntax on
 
 " Get Vim-Plug plugin manager
-"iwr -useb https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim | ni "$HOME/vimfiles/autoload/plug.vim" -Force
+" iwr -useb https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim | ni "$HOME/vimfiles/autoload/plug.vim" -Force
 
-call plug#begin($HOME.'/vimfiles/plugged')
-    Plug 'preservim/nerdcommenter'
-call plug#end()
+" call plug#begin($HOME.'/vimfiles/plugged')
+"   Plug 'preservim/nerdcommenter'
+" call plug#end()
 
