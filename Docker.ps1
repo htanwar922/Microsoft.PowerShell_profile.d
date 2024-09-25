@@ -59,7 +59,7 @@ function docker-setup-image {
     docker run --rm -d -it --name $CONTAINER $BASE_IMAGE bash
     docker exec --user=root -it $CONTAINER useradd -mG 'adm,dialout,cdrom,floppy,sudo,audio,dip,video,plugdev' $USER
     docker exec --user=root -it $CONTAINER bash -c (_quote 'apt update')
-    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt install git zsh nano vim build-essential gcc g++ gdb -y')
+    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt install git zsh nano vim build-essential gcc g++ gdb libssl-dev -y')
     docker exec --user=$USER -it $CONTAINER git clone https://github.com/htanwar922/.zsh.git /home/$USER/.zsh
     # docker exec --user=$USER -it $CONTAINER git clone https://github.com/zsh-users/zsh-autosuggestions.git /home/$USER/.zsh/zsh-autosuggestions
     # docker exec --user=$USER -it $CONTAINER git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /home/$USER/.zsh/zsh-syntax-highlighting
