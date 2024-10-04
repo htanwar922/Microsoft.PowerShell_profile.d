@@ -52,19 +52,35 @@ function docker-env {
     }
 }
 
+function docker-get-binaries {
+    param (
+        [Switch]$force = $false
+    )
+    if ( $force -or $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue) ) {
+        Write-Debug 'Downloading Docker binaries...'
+        Invoke-WebRequest 'https://download.docker.com/win/static/stable/x86_64/docker-27.3.1.zip' -OutFile $env:TEMP\docker.zip
+        Expand-Archive -Path $env:TEMP\docker.zip -DestinationPath $env:ProgramFiles\Docker
+        Invoke-WebRequest 'https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-windows-x86_64.exe' -OutFile $Env:ProgramFiles\Docker\docker-compose.exe
+        Remove-Item $env:TEMP\docker.zip
+        Write-Debug 'Setup complete'
+    }
+    $env:Path = "$env:ProgramFiles\Docker;$env:Path"
+    $env:DOCKER_HOST = "tcp://localhost:2375"
+}
+
 function docker-setup-image {
     # basic setup
     if ( docker ps -a | Select-String $CONTAINER ) { docker stop $CONTAINER }
     docker pull $BASE_IMAGE
     docker run --rm -d -it --name $CONTAINER $BASE_IMAGE bash
     docker exec --user=root -it $CONTAINER useradd -mG 'adm,dialout,cdrom,floppy,sudo,audio,dip,video,plugdev' $USER
-    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt update')
-    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt install git zsh nano vim build-essential gcc g++ gdb libssl-dev -y')
+    docker exec --user=root -it $CONTAINER bash -c 'apt update'
+    docker exec --user=root -it $CONTAINER bash -c 'apt install git zsh nano vim build-essential gcc g++ gdb libssl-dev -y'
     docker exec --user=$USER -it $CONTAINER git clone https://github.com/htanwar922/.zsh.git /home/$USER/.zsh
     # docker exec --user=$USER -it $CONTAINER git clone https://github.com/zsh-users/zsh-autosuggestions.git /home/$USER/.zsh/zsh-autosuggestions
     # docker exec --user=$USER -it $CONTAINER git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /home/$USER/.zsh/zsh-syntax-highlighting
-    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt-get install zsh-* -y')
-    docker exec --user=root -it $CONTAINER bash -c (_quote 'apt install zsh-autosuggestions zsh-syntax-highlighting -y')
+    docker exec --user=root -it $CONTAINER bash -c 'apt-get install zsh-* -y'
+    docker exec --user=root -it $CONTAINER bash -c 'apt install zsh-autosuggestions zsh-syntax-highlighting -y'
     docker exec --user=root -it $CONTAINER ln -s /home/$USER/.zsh/zshrc /root/.zshrc
     docker exec --user=root -it $CONTAINER ln -s /home/$USER/.zsh/zprofile /root/.zprofile
     docker exec --user=root -it $CONTAINER chsh -s /bin/zsh
@@ -72,7 +88,7 @@ function docker-setup-image {
     docker exec --user=$USER -it $CONTAINER ln -s /home/$USER/.zsh/zprofile /home/$USER/.zprofile
     docker exec --user=root -it $CONTAINER chsh -s /bin/zsh $USER
     if ($DOCKER_IS_WSL_COMMAND) {
-        docker exec --user=root -it $CONTAINER zsh -c (_quote "echo $USER ALL=\(ALL\) NOPASSWD:ALL | tee -a /etc/sudoers")
+        docker exec --user=root -it $CONTAINER zsh -c "echo $USER ALL=\(ALL\) NOPASSWD:ALL | tee -a /etc/sudoers"
     } else {
         docker exec --user=root -it $CONTAINER zsh -c "echo '$USER' ALL='(ALL)' NOPASSWD:ALL | tee -a /etc/sudoers"
     }
@@ -132,15 +148,8 @@ function docker-run-container {
     )
 
     docker version > $null
-    if ($cmd -eq "") {
-        if ($DOCKER_USE_EXE) {
-            Write-Debug 'Using WSL from docker.exe...'
-            $cmd = "$DOCKER_SHELL -ilsc (_quote 'cd; $DOCKER_SHELL -ils')"
-        } else {
-            $cmd = "$DOCKER_SHELL -ilsc 'cd; $DOCKER_SHELL -ils'"
-        }
-    }
-    docker exec --user=$USER -it $CONTAINER $cmd
+    $cmd = $cmd ? $cmd : "$DOCKER_SHELL -ilsc 'cd; $DOCKER_SHELL -ils'"
+    Invoke-Expression "docker exec --user=$USER -it $CONTAINER $cmd"
     docker-save-container
 }
 function docker-save-container {
