@@ -119,7 +119,21 @@ function NetCat {
                 continue
             }
 
-            $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
+            if ($raw) {
+                try {
+                    $data = $input_.Value -split '(?<=\G.{2})' | ForEach-Object { if ($_) { [byte]::Parse($_, 'HexNumber') } }
+                } catch {
+                    try {
+                        $data = $input_.Value.Split($sep) | ForEach-Object { [byte]::Parse($_, 'HexNumber') }
+                    } catch {
+                        "Invalid input. Please enter hex or decimal numbers separated by '$sep'"
+                        continue
+                    }
+                }
+            } else {
+                $data = [System.Text.Encoding]::ASCII.GetBytes($input_.Value)
+            }
+
             if ($null -eq $remoteEndPoint.Value) {
                 $length = $socket.Send($data, $data.Length)
             } else {
