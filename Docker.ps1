@@ -1,13 +1,13 @@
 # Docker settings for linux-arm for DCU
 
-$IMAGE = $IMAGE ? $IMAGE : "linux-arm"
-$CONTAINER = $CONTAINER ? $CONTAINER : "linux-arm"
-$NETWORK = $NETWORK ? $NETWORK : "linux-arm"
-$USER = $USER ? $USER : "himanshu"
-$WSL_USER = $WSL_USER ? $WSL_USER : "himanshu"
-$BASE_IMAGE = $BASE_IMAGE ? $BASE_IMAGE : "osrf/ubuntu_armhf:focal"
+$IMAGE = $IMAGE ? $IMAGE : 'linux-arm'
+$CONTAINER = $CONTAINER ? $CONTAINER : 'linux-arm'
+$NETWORK = $NETWORK ? $NETWORK : 'linux-arm'
+$USER = $USER ? $USER : 'himanshu'
+$WSL_USER = $WSL_USER ? $WSL_USER : 'himanshu'
+$BASE_IMAGE = $BASE_IMAGE ? $BASE_IMAGE : 'osrf/ubuntu_armhf:focal'
 
-$DOCKER_SHELL = $DOCKER_SHELL ? $DOCKER_SHELL : "zsh"
+$DOCKER_SHELL = $DOCKER_SHELL ? $DOCKER_SHELL : 'zsh'
 $DOCKER_SAVE = $null -ne $DOCKER_SAVE ? $DOCKER_SAVE : $true
 
 $DOCKER_IS_WSL_COMMAND = $null -ne $DOCKER_IS_WSL_COMMAND ? $DOCKER_IS_WSL_COMMAND : $false
@@ -25,16 +25,56 @@ function _quote {
     }
 }
 
+# docker-env @{ `
+#   IMAGE = $IMAGE; `
+#   CONTAINER = $CONTAINER; `
+#   NETWORK = $NETWORK; `
+#   USER = $USER; `
+#   WSL_USER = $WSL_USER; `
+#   BASE_IMAGE = $BASE_IMAGE; `
+#   DOCKER_SHELL = $DOCKER_SHELL; `
+#   DOCKER_SAVE = $DOCKER_SAVE; `
+# }
+# docker-env @{} @('IMAGE', 'CONTAINER', 'NETWORK', 'USER', 'WSL_USER', 'BASE_IMAGE', 'DOCKER_SHELL', 'DOCKER_SAVE')
+# docker-env @{} @() ("IMAGE=$IMAGE;" +
+# "CONTAINER=$CONTAINER;" +
+# "NETWORK=$NETWORK;" +
+# "USER=$USER;" +
+# "WSL_USER=$WSL_USER;" +
+# "BASE_IMAGE=$BASE_IMAGE;" +
+# "DOCKER_SHELL=$DOCKER_SHELL;" +
+# "DOCKER_SAVE=$DOCKER_SAVE;")
+# ("IMAGE=$IMAGE;" +
+# "CONTAINER=$CONTAINER;" +
+# "NETWORK=$NETWORK;" +
+# "USER=$USER;" +
+# "WSL_USER=$WSL_USER;" +
+# "BASE_IMAGE=$BASE_IMAGE;" +
+# "DOCKER_SHELL=$DOCKER_SHELL;" +
+# "DOCKER_SAVE=$DOCKER_SAVE;") -split ';' | ConvertFrom-StringData | docker-env
 function docker-env {
     param (
-        [hashtable]$kvp = @{}
-        # [PSCustomObject]$kvp
+        [hashtable]$kvp = @{}, # [PSCustomObject]$kvp,
+        [array]$vars = @()
     )
 
     docker version > $null
 
+    $vars | ForEach-Object {
+        $kvp += @{ $_ = (Get-Variable -Name $_).Value }
+    }
+
+    $args | split -d ';' | ConvertFrom-StringData  | ForEach-Object {
+        $kvp = $_
+        $kvp.GetEnumerator() | ForEach-Object {
+            @{ $_.Key = $_.Value }
+        }
+    }
+
+    $kvp
+
     # foreach ($property in $kvp.PSObject.Properties) {
-    #     Set-Item -Path "Env:$($property.Name)" -Value $property.Value
+    #     Set-Item -Path "nv:$($property.Name)" -Value $property.Value
     #     $WSLENV += ':' + $property.Name
     # }
 
@@ -42,12 +82,12 @@ function docker-env {
         Set-Item -Path "Env:$($_.Key)" -Value $_.Value
 
         if ($DOCKER_IS_WSL_COMMAND) {
-            $WSLENV = (Get-Item -Path "Env:WSLENV").Value
-            if (-not [string]::IsNullOrEmpty($WSLENV) -and $WSLENV[-1] -ne ":") {
-                $WSLENV += ":"
+            $WSLENV = (Get-Item -Path 'Env:WSLENV').Value
+            if (-not [string]::IsNullOrEmpty($WSLENV) -and $WSLENV[-1] -ne ':') {
+                $WSLENV += ':'
             }
             $WSLENV += $_.Key
-            Set-Item -Path "Env:WSLENV" -Value $WSLENV
+            Set-Item -Path 'Env:WSLENV' -Value $WSLENV
         }
     }
 }
@@ -65,7 +105,7 @@ function docker-get-binaries {
         Write-Debug 'Setup complete'
     }
     $env:Path = "$env:ProgramFiles\Docker;$env:Path"
-    $env:DOCKER_HOST = "tcp://localhost:2375"
+    $env:DOCKER_HOST = 'tcp://localhost:2375'
 }
 
 function docker-setup-image {
@@ -94,20 +134,16 @@ function docker-setup-image {
     }
     docker commit $CONTAINER $IMAGE
     docker stop $CONTAINER
-    Write-Debug "Setup complete"
+    Write-Debug 'Setup complete'
 }
 function docker-start-container {
-    param (
-        [string]$cmd = ""
-    )
-
     docker network create $NETWORK
     if ( docker ps -a | Select-String $CONTAINER ) {
         docker stop $CONTAINER
     }
 
     if ($DOCKER_IS_WSL_COMMAND) {
-        if ( "$args" -eq "" ) {
+        if ( "$args" -eq '' ) {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
                 --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
                 --network $NETWORK -p 58020:58020 -p 58021:58021 -p 9020:9020/udp `
@@ -125,7 +161,7 @@ function docker-start-container {
                 --name $CONTAINER --user=$USER $IMAGE
         }
     } else {
-        if ( "$args" -eq "" ) {
+        if ( "$args" -eq '' ) {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
             --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
             --network $NETWORK -p 58020:58020 -p 58021:58021 -p 9020:9020/udp `
@@ -144,7 +180,7 @@ function docker-start-container {
 }
 function docker-run-container {
     param (
-        [string]$cmd = ""
+        [string]$cmd = ''
     )
 
     docker version > $null
@@ -162,8 +198,8 @@ function docker-cleanup-container {
     docker network rm $NETWORK
 
     # cleanup after commit
-    ( docker images | Select-String "<none>" ) -replace '\s{2,}', ',' `
-        | ConvertFrom-Csv -Header "REPOSITORY", "TAG", "IMAGE_ID", "CREATED", "SIZE" `
+    ( docker images | Select-String '<none>' ) -replace '\s{2,}', ',' `
+        | ConvertFrom-Csv -Header 'REPOSITORY', 'TAG', 'IMAGE_ID', 'CREATED', 'SIZE' `
         | Select-Object -ExpandProperty IMAGE_ID | ForEach-Object { docker rmi $_ --force }
 }
 function docker-stop-container {
@@ -174,27 +210,27 @@ function docker-stop-container {
 function docker {
     if ( $DOCKER_IS_WSL_COMMAND ) {
         if ( $DOCKER_USE_EXE ) {
-            Write-Debug "Using WSL from docker.exe..."
+            Write-Debug 'Using WSL from docker.exe...'
             docker.exe $args
         } else {
-            Write-Debug "Using WSL..."
+            Write-Debug 'Using WSL...'
             wsl -d Ubuntu -e docker $args
         }
         return
     }
     if ( $null -eq (Get-Command docker.exe -ErrorAction SilentlyContinue) -or `
             (docker.exe info 2>&1 | Select-String 'ERROR: error during connect') ) {
-        Write-Debug "Choosing WSL..."
+        Write-Debug 'Choosing WSL...'
         $global:DOCKER_IS_WSL_COMMAND = $true
         wsl -d Ubuntu -e docker $args
     } elseif ( (docker.exe info 2>&1 | Select-String 'Operating System' | `
                 ConvertFrom-StringData -Delimiter :).Values.Contains('Ubuntu') ) {
-        Write-Debug "Using WSL from docker.exe..."
+        Write-Debug 'Using WSL from docker.exe...'
         $global:DOCKER_IS_WSL_COMMAND = $true
         $global:DOCKER_USE_EXE = $true
         docker.exe $args
     } else {
-        Write-Debug "Not using WSL..."
+        Write-Debug 'Not using WSL...'
         docker.exe $args
     }
 }
