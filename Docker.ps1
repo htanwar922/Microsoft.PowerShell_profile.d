@@ -165,15 +165,15 @@ function docker-start-container {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
             --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
             --network $NETWORK -p 58020:58020 -p 58021:58021 -p 9020:9020/udp `
-            -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
-            -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
+            -v //wsl.localhost/Ubuntu/home/$WSL_USER/.ssh:/home/$USER/.ssh `
+            -v //wsl.localhost/Ubuntu/home/$WSL_USER/concentrator:/home/$USER/concentrator `
             --name $CONTAINER --user=$USER $IMAGE
         } else {
             docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
                 --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
                 --network $NETWORK "$args" `
-                -v \\wsl.localhost\Ubuntu\home\$WSL_USER\.ssh:/home/$USER/.ssh `
-                -v \\wsl.localhost\Ubuntu\home\$WSL_USER\concentrator\:/home/$USER/concentrator `
+                -v //wsl.localhost/Ubuntu/home/$WSL_USER/.ssh:/home/$USER/.ssh `
+                -v //wsl.localhost/Ubuntu/home/$WSL_USER/concentrator:/home/$USER/concentrator `
                 --name $CONTAINER --user=$USER $IMAGE
         }
     }
