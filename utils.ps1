@@ -53,13 +53,38 @@ function wc {
 function grep {
 	param (
 		[string]$pattern = "",
-		[string]$file = ""
+		[string]$file = "",
+		[Switch]$v,		# Invert match
+		[Switch]$i,		# Case insensitive
+		[Switch]$c		# Count lines
 	)
 
+	$pattern = [regex]::Escape($pattern)
+
+	if ($i) {
+		$pattern = "(?i)$pattern"
+	}
+
 	if ($file -eq "") {
-		$Input | Select-String $pattern
+		if ($c) {
+			$Input | Select-String -Pattern $pattern -AllMatches | Measure-Object | Select-Object -ExpandProperty Count
+		} else {
+			if ($v) {
+				$Input | Select-String -Pattern $pattern -AllMatches -NotMatch -CaseSensitive
+			} else {
+				$Input | Select-String -Pattern $pattern -AllMatches -CaseSensitive
+			}
+		}
 	} else {
-		Get-Content $file | Select-String $pattern
+		if ($c) {
+			(Get-Content $file | Select-String -Pattern $pattern -AllMatches).Count
+		} else {
+			if ($v) {
+				Select-String -Path $file -Pattern $pattern -AllMatches -NotMatch -CaseSensitive
+			} else {
+				Select-String -Path $file -Pattern $pattern -AllMatches -CaseSensitive
+			}
+		}
 	}
 }
 
