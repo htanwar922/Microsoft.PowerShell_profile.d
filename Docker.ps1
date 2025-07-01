@@ -1,14 +1,14 @@
 # Docker settings for linux-arm for DCU
 
-$IMAGE = $IMAGE ? $IMAGE : 'linux-arm'
-$CONTAINER = $CONTAINER ? $CONTAINER : 'linux-arm'
+$IMAGE = $IMAGE ? $IMAGE : 'linux'
+$CONTAINER = $CONTAINER ? $CONTAINER : 'linux'
 $DOCKER_USER = $DOCKER_USER ? $DOCKER_USER : 'himanshu'
-$NETWORK = $NETWORK ? $NETWORK : 'linux-arm'
+$NETWORK = $NETWORK ? $NETWORK : 'bridge'
 $DOCKER_SHELL = $DOCKER_SHELL ? $DOCKER_SHELL : 'zsh'
 
 $WSL_USER = $WSL_USER ? $WSL_USER : 'himanshu'
-$BASE_IMAGE = $BASE_IMAGE ? $BASE_IMAGE : 'osrf/ubuntu_armhf:focal'
-$DOCKER_SAVE = $null -ne $DOCKER_SAVE ? $DOCKER_SAVE : $true
+$BASE_IMAGE = $BASE_IMAGE ? $BASE_IMAGE : 'debian'
+$DOCKER_SAVE = $null -ne $DOCKER_SAVE ? $DOCKER_SAVE : $false
 
 # Initialize-Docker-Variables -image 'ubuntu:14.04-dev' -container 'trusty' -docker_user 'root' -docker_shell '' -network 'test' -base_image 'ubuntu:14.04' -docker_save $true
 function Initialize-Docker-Variables {
@@ -20,7 +20,7 @@ function Initialize-Docker-Variables {
         [string]$wsl_user = 'himanshu',
         [string]$docker_shell = 'zsh',
         [string]$base_image = 'osrf/ubuntu_armhf:focal',
-        [bool]$docker_save = $true
+        [bool]$docker_save = $false
     )
 
     $global:IMAGE = $image ? $image : $global:IMAGE
@@ -63,7 +63,7 @@ function Initialize-Docker-Image {
         return
     }
 
-    $USER_HOME = if ($docker_user -eq 'root') { '/root' } else { "/home/$docker_user" }
+    $docker_user_home = if ($docker_user -eq 'root') { '/root' } else { "/home/$docker_user" }
 
     # basic setup
     if ( (docker ps -a --format '{{.Names}}') -contains $container ) { docker stop $container }
@@ -73,22 +73,31 @@ function Initialize-Docker-Image {
     if ( $docker_user -ne 'root' ) {
         docker exec --user=root -it $container useradd -mG 'adm,dialout,cdrom,floppy,sudo,audio,dip,video,plugdev' $docker_user
     }
-    docker exec --user=root -it $container sh -c 'apt update'
-    docker exec --user=root -it $container sh -c 'apt install git zsh nano vim build-essential gcc g++ gdb libssl-dev -y'
+    docker exec --user=root -it $container apt update
+    docker exec --user=root -it $container apt install -y git zsh nano vim build-essential gcc g++ gdb libssl-dev
+    docker exec --user=root -it $container apt install -y iputils-ping net-tools iproute2
 
-    docker exec --user=$docker_user -it $container git clone https://github.com/htanwar922/.zsh.git $USER_HOME/.zsh
-    # docker exec --user=$docker_user -it $container git clone https://github.com/zsh-users/zsh-autosuggestions.git $USER_HOME/.zsh/zsh-autosuggestions
-    # docker exec --user=$docker_user -it $container git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $USER_HOME/.zsh/zsh-syntax-highlighting
-    docker exec --user=root -it $container sh -c 'apt install zsh-* -y'
-    docker exec --user=root -it $container sh -c 'apt install zsh-autosuggestions zsh-syntax-highlighting -y'
-    docker exec --user=root -it $container ln -s $USER_HOME/.zsh/zshrc /root/.zshrc
-    docker exec --user=root -it $container ln -s $USER_HOME/.zsh/zprofile /root/.zprofile
+    docker exec --user=root -it $container apt-get install -y zsh-*
+    docker exec --user=root -it $container apt install -y zsh-autosuggestions zsh-syntax-highlighting
+    docker exec --user=$docker_user -it $container git clone https://github.com/htanwar922/.zsh.git $docker_user_home/.zsh
+    # docker exec --user=$docker_user -it $container git clone https://github.com/zsh-users/zsh-autosuggestions.git $docker_user_home/.zsh/zsh-autosuggestions
+    # docker exec --user=$docker_user -it $container git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $docker_user_home/.zsh/zsh-syntax-highlighting
+
+    docker exec --user=root -it $container ln -s $docker_user_home/.zsh/zshrc /root/.zshrc
+    docker exec --user=root -it $container ln -s $docker_user_home/.zsh/zprofile /root/.zprofile
+    docker exec --user=root -it $container ln -s $docker_user_home/.zsh/zshenv /root/.zshenv
+    docker exec --user=root -it $container ln -s $docker_user_home/.zsh/zlogin /root/.zlogin
+    docker exec --user=root -it $container ln -s $docker_user_home/.zsh/zlogout /root/.zlogout
     docker exec --user=root -it $container chsh -s /bin/zsh
-    docker exec --user=$docker_user -it $container ln -s $USER_HOME/.zsh/zshrc $USER_HOME/.zshrc
-    docker exec --user=$docker_user -it $container ln -s $USER_HOME/.zsh/zprofile $USER_HOME/.zprofile
-    docker exec --user=root -it $container chsh -s /bin/zsh $docker_user
 
     if ( $docker_user -ne 'root' ) {
+        docker exec --user=$docker_user -it $container ln -s $docker_user_home/.zsh/zshrc $docker_user_home/.zshrc
+        docker exec --user=$docker_user -it $container ln -s $docker_user_home/.zsh/zprofile $docker_user_home/.zprofile
+        docker exec --user=$docker_user -it $container ln -s $docker_user_home/.zsh/zshenv $docker_user_home/.zshenv
+        docker exec --user=$docker_user -it $container ln -s $docker_user_home/.zsh/zlogin $docker_user_home/.zlogin
+        docker exec --user=$docker_user -it $container ln -s $docker_user_home/.zsh/zlogout $docker_user_home/.zlogout
+        docker exec --user=root -it $container chsh -s /bin/zsh $docker_user
+
         docker exec --user=root -it $container zsh -c "echo '$docker_user' ALL='(ALL)' NOPASSWD:ALL | tee -a /etc/sudoers"
     }
 
@@ -110,31 +119,40 @@ function Start-Docker-Container {
     }
     if ( (docker ps -a --format '{{.Names}}') -contains $container ) {
         docker stop $container
+        Start-Sleep -Seconds 1
+        docker rm $container 2> $null
+        Start-Sleep -Seconds 1
     }
+
+    $DISPLAY = (wsl -e sh -c 'echo $DISPLAY')
 
     Start-Sleep -Seconds 1
     docker run --rm -d -it --privileged --cap-add=SYS_PTRACE `
         --security-opt seccomp=unconfined --security-opt apparmor=unconfined `
         --network $network @args `
+        -e TZ=Asia/Kolkata -e DISPLAY=$DISPLAY `
+        -v /tmp/.X11-unix:/tmp/.X11-unix `
         -v /home/$WSL_USER/.ssh:$docker_user_home/.ssh `
         -v /home/$WSL_USER/concentrator:$docker_user_home/concentrator `
         -v /home/$WSL_USER/Downloads:$docker_user_home/Downloads `
-        --name $container --user=$docker_user $image
+        --name $container --user=$docker_user $image sh
 }
 
 function Invoke-Docker-Container {
     param (
         [string]$cmd = '',
         [string]$container = $CONTAINER,
-        [string]$docker_user = $DOCKER_USER
+        [string]$docker_user = $DOCKER_USER,
+        [Switch]$save
     )
 
     docker version > $null
     $cmd = $cmd ? $cmd : "$DOCKER_SHELL -ilsc 'cd; $DOCKER_SHELL -ils'"
     Invoke-Expression "docker exec --user=$docker_user -it $container $cmd"
 
-    $image = (docker inspect $container | ConvertFrom-Json).Config.Image
-    Save-Docker-Container -container $container -image $image
+    if ( $DOCKER_SAVE -or $save ) {
+        Save-Docker-Container -container $container
+    }
 }
 
 function Save-Docker-Container {
@@ -142,12 +160,12 @@ function Save-Docker-Container {
         [string]$container = $CONTAINER,
         [string]$image = $null
     )
-    if ($DOCKER_SAVE) {
-        if (-not $image) {
-            $image = (docker inspect $container | ConvertFrom-Json).Config.Image
-        }
-        docker commit $container $image
+    if (-not $image) {
+        $image = (docker inspect $container | ConvertFrom-Json).Config.Image
     }
+
+    Write-Host "Saving container $container as image $image"
+    docker commit $container $image
 }
 
 function Clear-Docker-Images {
@@ -189,11 +207,13 @@ function Stop-Docker-Container {
     param (
         [string]$container = $CONTAINER
     )
-    Save-Docker-Container -container $container
+    if ( $DOCKER_SAVE ) {
+        Save-Docker-Container -container $container
+    }
     Remove-Docker-Container -container $container
 }
 
-function Set-Docker-AutoComplete {
+function Set-Docker-AutoComplete-Suggestions {
     param($type = $null)
 
     switch ($type) {
@@ -266,37 +286,37 @@ function Set-Docker-AutoComplete {
     }
 }
 
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName network -ScriptBlock { (Set-Docker-AutoComplete 'network').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete 'user').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName base_image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_save -ScriptBlock { (Set-Docker-AutoComplete 'bool').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName wsl_user -ScriptBlock { (Set-Docker-AutoComplete 'wsl_user').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_shell -ScriptBlock { (Set-Docker-AutoComplete 'shell').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName network -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'network').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'user').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName base_image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_save -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'bool').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName wsl_user -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'wsl_user').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Variables -ParameterName docker_shell -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'shell').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName install -ScriptBlock { (Set-Docker-AutoComplete 'bool').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName base_image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
-Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete 'user').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName install -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'bool').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName base_image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Initialize-Docker-Image -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'user').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
-Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
-Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName network -ScriptBlock { (Set-Docker-AutoComplete 'network').Invoke($args) }
-Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete 'user').Invoke($args) }
+Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName network -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'network').Invoke($args) }
+Register-ArgumentCompleter -CommandName Start-Docker-Container -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'user').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName cmd -ScriptBlock { (Set-Docker-AutoComplete 'shell').Invoke($args) }
-Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
-Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete 'user').Invoke($args) }
+Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName cmd -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'shell').Invoke($args) }
+Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Invoke-Docker-Container -ParameterName docker_user -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'user').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Save-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
-Register-ArgumentCompleter -CommandName Save-Docker-Container -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete 'image').Invoke($args) }
+Register-ArgumentCompleter -CommandName Save-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Save-Docker-Container -ParameterName image -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'image').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName force -ScriptBlock { (Set-Docker-AutoComplete 'bool').Invoke($args) }
-Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName force -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'bool').Invoke($args) }
+Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
 
-Register-ArgumentCompleter -CommandName Stop-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete 'container').Invoke($args) }
+Register-ArgumentCompleter -CommandName Stop-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
 
 Set-Alias 'docker-setup-image'        'Initialize-Docker-Image'
 Set-Alias 'docker-start-container'    'Start-Docker-Container'
