@@ -142,17 +142,35 @@ function cut {
 }
 
 function tr {
-	param (
-		[string]$d = " ",
-		[string]$s = "",
-		[string]$file = ""
-	)
+    param (
+            [string]$old = $null,
+            [string]$new = $null,
+            [string]$d = $null,
+            [string]$file = $null
+    )
 
-	if ($file -eq "") {
-		$Input | ForEach-Object { $_ -replace "[$s]", $d }
-	} else {
-		(Get-Content $file) -replace "[$s]", $d
-	}
+    if ($old -and $new) {
+        if (-not $file) {
+                $Input | ForEach-Object { $_ -replace "[$old]", $new }
+        } else {
+                (Get-Content $file) -replace "[$old]", $new
+        }
+        return
+    }
+
+    if ($d) {
+        if (-not $file) {
+                $Input | ForEach-Object { $_ -split "[$d]" -join "" }
+        } else {
+                (Get-Content $file) -split "[$d]" -join ""
+        }
+        return
+    }
+
+    Write-Error "Invalid parameters"
+    Write-Host "Usage: tr [-old] <old_chars> [-new] <new_chars> [-file <file_path>]"
+    Write-Host "   or: tr -d <chars_to_delete> [-file <file_path>]"
+    return $null
 }
 
 function join {
