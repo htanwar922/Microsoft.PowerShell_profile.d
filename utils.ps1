@@ -1,6 +1,6 @@
 # Basic linux functionalities
 
-function head {
+function head_ {
 	param (
 		[string]$file = "",
 		[int]$n = 10
@@ -13,7 +13,7 @@ function head {
 	}
 }
 
-function tail {
+function tail_ {
 	param (
 		[string]$file = "",
 		[int]$n = 10
@@ -26,7 +26,7 @@ function tail {
 	}
 }
 
-function less {
+function less_ {
 	param (
 		[string]$file = ""
 	)
@@ -38,7 +38,7 @@ function less {
 	}
 }
 
-function wc {
+function wc_ {
 	param (
 		[string]$file = ""
 	)
@@ -50,7 +50,7 @@ function wc {
 	}
 }
 
-function grep {
+function grep_ {
 	param (
 		[string]$pattern = "",
 		[string]$file = "",
@@ -88,7 +88,7 @@ function grep {
 	}
 }
 
-function sed {
+function sed_ {
 	param (
 		[string]$pattern = "",
 		[string]$replacement = "",
@@ -102,7 +102,7 @@ function sed {
 	}
 }
 
-function awk {
+function awk_ {
 	param (
 		[string]$script = "",
 		[string]$file = ""
@@ -115,7 +115,7 @@ function awk {
 	}
 }
 
-function uniq {
+function uniq_ {
 	param (
 		[string]$file = ""
 	)
@@ -127,7 +127,7 @@ function uniq {
 	}
 }
 
-function cut {
+function cut_ {
 	param (
 		[int]$f = 1,
 		[string]$d = " ",
@@ -173,7 +173,7 @@ function tr {
     return $null
 }
 
-function join {
+function join_ {
 	param (
 		[string]$d = " ",
 		[string]$file1 = "",
@@ -188,7 +188,7 @@ function join {
 	}
 }
 
-function paste {
+function paste_ {
 	param (
 		[string]$d = " ",
 		[string]$file1 = "",
@@ -203,7 +203,7 @@ function paste {
 	}
 }
 
-function split {
+function split_ {
 	param (
 		[string]$d = " ",
 		[string]$file = ""
@@ -216,7 +216,7 @@ function split {
 	}
 }
 
-function xargs {
+function xargs_ {
 	param (
 		[string]$cmd = ""
 	)
@@ -233,7 +233,7 @@ function find_ {
 	Get-ChildItem -Path $path -Recurse -Filter $name
 }
 
-function du {
+function du_ {
 	param (
 		[string]$path = "."
 	)
@@ -241,19 +241,19 @@ function du {
 	Get-ChildItem -Path $path -Recurse | Measure-Object -Property Length -Sum
 }
 
-function df {
+function df_ {
 	Get-PSDrive -PSProvider FileSystem | Select-Object -Property Name, Used, Free
 }
 
-function top {
+function top_ {
 	Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 10
 }
 
-function free {
+function free_ {
 	Get-WmiObject -Class Win32_OperatingSystem | Select-Object -Property FreePhysicalMemory
 }
 
-function uname {
+function uname_ {
 	$os = Get-WmiObject -Class Win32_OperatingSystem
 	$cs = Get-WmiObject -Class Win32_ComputerSystem
 
