@@ -1,6 +1,6 @@
 # sudo
 
-function sudo {
+function sudo_ {
 	$openShell = $false
 	$logOutput = $false
 	while ( $args[0].StartsWith('-') ) {

@@ -32,9 +32,9 @@ function less_ {
 	)
 
 	if ($file -eq "") {
-		$Input | Out-Host
+		$Input | more
 	} else {
-		Get-Content $file | Out-Host
+		Get-Content $file | more
 	}
 }
 
@@ -44,10 +44,16 @@ function wc_ {
 	)
 
 	if ($file -eq "") {
-		$Input | Measure-Object | Select-Object -ExpandProperty Count
+		$lines = @($Input)
 	} else {
-		(Get-Content $file | Measure-Object).Count
+		$lines = @(Get-Content $file)
 	}
+
+	$lineCount = $lines.Count
+	$wordCount = @(($lines -join "`n") -split '\s+' | Where-Object { $_ -ne '' }).Count
+	$charCount = ($lines -join '').Length
+
+	"$lineCount $wordCount $charCount"
 }
 
 function grep_ {
@@ -59,32 +65,20 @@ function grep_ {
 		[Switch]$c		# Count lines
 	)
 
-	$pattern = [regex]::Escape($pattern)
-
-	if ($i) {
-		$pattern = "(?i)$pattern"
-	}
+	$params = @{ Pattern = $pattern; AllMatches = $true }
+	if (-not $i) { $params['CaseSensitive'] = $true }
+	if ($v) { $params['NotMatch'] = $true }
 
 	if ($file -eq "") {
-		if ($c) {
-			$Input | Select-String -Pattern $pattern -AllMatches | Measure-Object | Select-Object -ExpandProperty Count
-		} else {
-			if ($v) {
-				$Input | Select-String -Pattern $pattern -AllMatches -NotMatch -CaseSensitive
-			} else {
-				$Input | Select-String -Pattern $pattern -AllMatches -CaseSensitive
-			}
-		}
+		$result = $Input | Select-String @params
 	} else {
-		if ($c) {
-			(Get-Content $file | Select-String -Pattern $pattern -AllMatches).Count
-		} else {
-			if ($v) {
-				Select-String -Path $file -Pattern $pattern -AllMatches -NotMatch -CaseSensitive
-			} else {
-				Select-String -Path $file -Pattern $pattern -AllMatches -CaseSensitive
-			}
-		}
+		$result = Select-String -Path $file @params
+	}
+
+	if ($c) {
+		@($result).Count
+	} else {
+		$result
 	}
 }
 
@@ -99,19 +93,6 @@ function sed_ {
 		$Input | ForEach-Object { $_ -replace $pattern, $replacement }
 	} else {
 		(Get-Content $file) -replace $pattern, $replacement
-	}
-}
-
-function awk_ {
-	param (
-		[string]$script = "",
-		[string]$file = ""
-	)
-
-	if ($file -eq "") {
-		$Input | ForEach-Object { Invoke-Expression $script }
-	} else {
-		Get-Content $file | ForEach-Object { Invoke-Expression $script }
 	}
 }
 
@@ -130,14 +111,20 @@ function uniq_ {
 function cut_ {
 	param (
 		[int]$f = 1,
-		[string]$d = " ",
+		[string]$d = "`t",
 		[string]$file = ""
 	)
 
 	if ($file -eq "") {
-		$Input | ForEach-Object { $_.Split($d)[$f] }
+		$Input | ForEach-Object {
+			$fields = $_.Split($d, [System.StringSplitOptions]::None)
+			if ($f -le $fields.Length) { $fields[$f - 1] }
+		}
 	} else {
-		Get-Content $file | ForEach-Object { $_.Split($d)[$f] }
+		Get-Content $file | ForEach-Object {
+			$fields = $_.Split($d, [System.StringSplitOptions]::None)
+			if ($f -le $fields.Length) { $fields[$f - 1] }
+		}
 	}
 }
 
@@ -149,28 +136,59 @@ function tr {
             [string]$file = $null
     )
 
-    if ($old -and $new) {
-        if (-not $file) {
-                $Input | ForEach-Object { $_ -replace "[$old]", $new }
-        } else {
-                (Get-Content $file) -replace "[$old]", $new
-        }
-        return
-    }
-
     if ($d) {
-        if (-not $file) {
-                $Input | ForEach-Object { $_ -split "[$d]" -join "" }
-        } else {
-                (Get-Content $file) -split "[$d]" -join ""
+        $trSet = [System.Collections.Generic.HashSet[char]]::new($d.ToCharArray())
+        $transform = {
+            param($line)
+            ($line.ToCharArray() | Where-Object { -not $trSet.Contains($_) }) -join ''
         }
-        return
+    } else {
+        if (-not $old -or -not $new) {
+            Write-Error "Invalid parameters"
+            Write-Host "Usage: tr <old_chars> <new_chars> [-file <file_path>]"
+            Write-Host "   or: tr -d <chars_to_delete> [-file <file_path>]"
+            return
+        }
+        $expand = {
+            param($s)
+            $out = [System.Collections.Generic.List[char]]::new()
+            $i = 0
+            while ($i -lt $s.Length) {
+                if ($i + 2 -lt $s.Length -and $s[$i + 1] -eq '-') {
+                    $start = [int]$s[$i]
+                    $end = [int]$s[$i + 2]
+                    if ($end -ge $start) {
+                        for ($c = $start; $c -le $end; $c++) { $out.Add([char]$c) }
+                        $i += 3
+                        continue
+                    }
+                }
+                $out.Add($s[$i])
+                $i++
+            }
+            -join $out
+        }
+        $oldChars = & $expand $old
+        $newChars = & $expand $new
+        $trMap = @{}
+        for ($i = 0; $i -lt $oldChars.Length; $i++) {
+            $trMap[$oldChars[$i]] = $newChars[[Math]::Min($i, $newChars.Length - 1)]
+        }
+        $transform = {
+            param($line)
+            $chars = $line.ToCharArray()
+            for ($i = 0; $i -lt $chars.Length; $i++) {
+                if ($trMap.ContainsKey($chars[$i])) { $chars[$i] = $trMap[$chars[$i]] }
+            }
+            -join $chars
+        }
     }
 
-    Write-Error "Invalid parameters"
-    Write-Host "Usage: tr [-old] <old_chars> [-new] <new_chars> [-file <file_path>]"
-    Write-Host "   or: tr -d <chars_to_delete> [-file <file_path>]"
-    return $null
+    if ($file) {
+        Get-Content $file | ForEach-Object { & $transform $_ }
+    } else {
+        $Input | ForEach-Object { & $transform $_ }
+    }
 }
 
 function join_ {
@@ -180,11 +198,14 @@ function join_ {
 		[string]$file2 = ""
 	)
 
-	$lines1 = Get-Content $file1
-	$lines2 = Get-Content $file2
+	$lines1 = @(Get-Content $file1)
+	$lines2 = @(Get-Content $file2)
 
-	for ($i = 0; $i -lt $lines1.Length; $i++) {
-		$lines1[$i] + $d + $lines2[$i]
+	$count = [Math]::Max($lines1.Count, $lines2.Count)
+	for ($i = 0; $i -lt $count; $i++) {
+		$l1 = if ($i -lt $lines1.Count) { $lines1[$i] } else { "" }
+		$l2 = if ($i -lt $lines2.Count) { $lines2[$i] } else { "" }
+		$l1 + $d + $l2
 	}
 }
 
@@ -195,11 +216,14 @@ function paste_ {
 		[string]$file2 = ""
 	)
 
-	$lines1 = Get-Content $file1
-	$lines2 = Get-Content $file2
+	$lines1 = @(Get-Content $file1)
+	$lines2 = @(Get-Content $file2)
 
-	for ($i = 0; $i -lt $lines1.Length; $i++) {
-		$lines1[$i] + $d + $lines2[$i]
+	$count = [Math]::Max($lines1.Count, $lines2.Count)
+	for ($i = 0; $i -lt $count; $i++) {
+		$l1 = if ($i -lt $lines1.Count) { $lines1[$i] } else { "" }
+		$l2 = if ($i -lt $lines2.Count) { $lines2[$i] } else { "" }
+		$l1 + $d + $l2
 	}
 }
 
@@ -238,7 +262,8 @@ function du_ {
 		[string]$path = "."
 	)
 
-	Get-ChildItem -Path $path -Recurse | Measure-Object -Property Length -Sum
+	$sum = (Get-ChildItem -Path $path -Recurse -File | Measure-Object -Property Length -Sum).Sum
+	"{0:N2} MB" -f ($sum / 1MB)
 }
 
 function df_ {
@@ -250,12 +275,17 @@ function top_ {
 }
 
 function free_ {
-	Get-WmiObject -Class Win32_OperatingSystem | Select-Object -Property FreePhysicalMemory
+	$os = Get-CimInstance -Class Win32_OperatingSystem
+
+	[PSCustomObject]@{
+		TotalMB = [math]::Round($os.TotalVisibleMemorySize / 1KB)
+		FreeMB  = [math]::Round($os.FreePhysicalMemory / 1KB)
+	}
 }
 
 function uname_ {
-	$os = Get-WmiObject -Class Win32_OperatingSystem
-	$cs = Get-WmiObject -Class Win32_ComputerSystem
+	$os = Get-CimInstance -Class Win32_OperatingSystem
+	$cs = Get-CimInstance -Class Win32_ComputerSystem
 
 	$os.Caption + " " + $os.Version + " " + $cs.Manufacturer + " " + $cs.Model
 }
