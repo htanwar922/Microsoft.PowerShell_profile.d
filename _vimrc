@@ -11,6 +11,7 @@ set nowritebackup  " Disable backup before writing
 set noswapfile     " Disable swap files
 set noundofile     " Disable undo files
 set number         " Show line numbers
+set paste          " Paste without auto-indents
 syntax on
 
 " set backupdir=${env:TEMP}\vim
