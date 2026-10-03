@@ -278,6 +278,15 @@ function Set-Docker-AutoComplete-Suggestions {
                 $shells -like "$wordToComplete*"
             }
         }
+        'volume' {
+            return {
+                param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameter)
+
+                $volumes = @()
+                $volumes += docker volume ls --format '{{.Name}}'
+                $volumes -like "$wordToComplete*"
+            }
+        }
         Default {
             return {
                 param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameter)
@@ -317,6 +326,85 @@ Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName f
 Register-ArgumentCompleter -CommandName Remove-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
 
 Register-ArgumentCompleter -CommandName Stop-Docker-Container -ParameterName container -ScriptBlock { (Set-Docker-AutoComplete-Suggestions 'container').Invoke($args) }
+
+# Native docker command completion
+Register-ArgumentCompleter -CommandName docker -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameter)
+
+    $elements = @($commandAst.CommandElements)
+    if ($elements.Count -lt 2) { return }
+
+    # Bail out for flags: we don't complete flag names, and a flag's value
+    # (e.g. docker run -v /path/<TAB>) should get default path completion.
+    if ($wordToComplete -like '-*' -or $elements[$elements.Count - 2].Value -like '-*') { return }
+
+    # First argument: subcommand
+    if ($elements.Count -eq 2) {
+        $subcommands = @('build', 'commit', 'compose', 'cp', 'create', 'diff', 'exec', 'images', 'image', 'info', 'inspect', 'kill', 'load', 'logs', 'network', 'pause', 'port', 'ps', 'pull', 'push', 'rename', 'rm', 'rmi', 'run', 'save', 'start', 'stats', 'stop', 'swarm', 'system', 'tag', 'unpause', 'update', 'version', 'volume', 'wait')
+        return $subcommands -like "$wordToComplete*"
+    }
+
+    $sub = $elements[1].Value
+
+    # Second argument: sub-subcommand
+    if ($elements.Count -eq 3) {
+        $subSubcommands = switch ($sub) {
+            'network' { @('connect', 'create', 'disconnect', 'inspect', 'ls', 'prune', 'rm') }
+            'volume'  { @('create', 'inspect', 'ls', 'prune', 'rm') }
+            'image'   { @('build', 'history', 'inspect', 'ls', 'prune', 'rm', 'tag') }
+            'compose' { @('build', 'config', 'down', 'kill', 'logs', 'pause', 'pull', 'ps', 'restart', 'rm', 'run', 'start', 'stop', 'top', 'unpause', 'up', 'version') }
+            'system'  { @('df', 'info', 'prune') }
+            default   { $null }
+        }
+        if ($subSubcommands) { return $subSubcommands -like "$wordToComplete*" }
+    }
+
+    # Third argument onward: value based on subcommand
+    $suggestion = switch ($sub) {
+        'run'        { 'image' }
+        'create'     { 'image' }
+        'pull'       { 'image' }
+        'push'       { 'image' }
+        'tag'        { 'image' }
+        'rmi'        { 'image' }
+        'history'    { 'image' }
+        'save'       { 'image' }
+        'commit'     { 'container' }
+        'exec'       { 'container' }
+        'stop'       { 'container' }
+        'start'      { 'container' }
+        'restart'    { 'container' }
+        'rm'         { 'container' }
+        'kill'       { 'container' }
+        'pause'      { 'container' }
+        'unpause'    { 'container' }
+        'attach'     { 'container' }
+        'logs'       { 'container' }
+        'port'       { 'container' }
+        'stats'      { 'container' }
+        'diff'       { 'container' }
+        'rename'     { 'container' }
+        'wait'       { 'container' }
+        'update'     { 'container' }
+        'inspect'    { 'container' }
+        'network'    { 'network' }
+        'volume'     { 'volume' }
+        default      { $null }
+    }
+
+    if ($suggestion) { (Set-Docker-AutoComplete-Suggestions $suggestion).Invoke($args) }
+}
+
+# Standalone docker-compose: subcommands only (services are project-specific)
+Register-ArgumentCompleter -CommandName docker-compose -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameter)
+
+    $elements = @($commandAst.CommandElements)
+    if ($elements.Count -ne 2) { return }
+
+    $subcommands = @('build', 'config', 'down', 'kill', 'logs', 'pause', 'pull', 'ps', 'restart', 'rm', 'run', 'start', 'stop', 'top', 'unpause', 'up', 'version')
+    $subcommands -like "$wordToComplete*"
+}
 
 Set-Alias 'docker-setup-image'        'Initialize-Docker-Image'
 Set-Alias 'docker-start-container'    'Start-Docker-Container'
